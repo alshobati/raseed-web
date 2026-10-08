@@ -16,7 +16,6 @@
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
 </head>
 <body>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@500;600;700&display=swap">
 <style>
@@ -193,6 +192,9 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 (() => {
 'use strict';
@@ -200,7 +202,7 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 const KEY = 'raseed.v1', LOGO_KEY = 'raseed.logo';
 const DEV_PHONE = '967781211350', DEV_PHONE_TXT = '+967 781 211 350';
 const DEV_BIO = 'باحث في علوم الإدارة، ومحاسب مالي متمكّن، وخبير في تقنيات الحاسب الآلي وتطوير الأنظمة، إلى جانب خبرته في التصميم الجرافيكي والتسويق الرقمي وتطوير الأعمال. يجمع بين الدقة المالية والرؤية الإدارية والحس الإبداعي، ليقدّم حلولاً رقمية تخدم أصحاب الأعمال وتنمّي مشاريعهم.';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DEF_CUR = [{name:'ريال يمني',symbol:'ر.ي'},{name:'ريال سعودي',symbol:'ر.س'},{name:'دولار',symbol:'$'}];
 const T_REM = 'السلام عليكم {الاسم}،\nنذكّركم بأن رصيدكم المستحق لدى {المتجر}:\n{الأرصدة}\n{المتأخر}نرجو التكرم بالسداد، شاكرين حسن تعاملكم.\nللتواصل: {هاتف_المتجر}';
 const T_ST = 'السلام عليكم {الاسم}،\nمرفق كشف حسابكم لدى {المتجر} حتى تاريخ {التاريخ}:\n{الأرصدة}\nللاستفسار: {هاتف_المتجر}';
@@ -396,10 +398,11 @@ function vOnboard() {
     <p style="color:#C9D6E6;font-size:14px;margin:4px 0 10px">سجّل ديون عملائك ومستحقات مورديك بثلاث عملات، وتابع أعمار الديون والحدود الائتمانية، وأرسل التذكيرات وكشوف الحساب عبر واتساب.</p>
     <label class="field">اسم المتجر أو النشاط<input id="ob-name" name="name" required autocomplete="organization"></label>
     <div class="row" style="width:100%;align-items:flex-end"><label class="field" style="width:96px">المفتاح<input id="ob-cc" name="cc" value="${esc(D.settings.cc)}" inputmode="numeric" class="ltr"></label>
-    <label class="field grow">هاتف المتجر (يظهر في الكشوف)<input id="ob-phone" name="phone" inputmode="tel" class="ltr"></label></div>
+    <label class="field grow">جوال المتجر (يظهر في الكشوف)<input id="ob-phone" name="phone" inputmode="tel" class="ltr" required minlength="7"></label></div>
+    <p style="color:#A9BBD1;font-size:12px;margin:6px 0 0;text-align:start">تبدأ فترة تجريبية مجانية لمدة 30 يوماً. بالمتابعة توافق على إرسال اسم المتجر ورقم الجوال إلى المطور لتسجيل نسختك وتفعيلها والتواصل معك. بيانات عملائك وحساباتك تبقى على جهازك.</p>
     <button class="btn" style="background:#F2C66D;color:#18212B;margin-top:8px">ابدأ</button>
     <div class="credit" style="margin-top:18px"><span class="t">تطوير</span><img src="img/dev_logo.png" alt="شعار أبو الغيث" style="width:70px;height:70px"><a href="https://wa.me/${DEV_PHONE}" target="_blank" rel="noopener" class="ltr">${DEV_PHONE_TXT}</a></div></div>
-    <div class="small muted" style="text-align:center">بياناتك تُحفظ على هذا الجهاز فقط. خذ نسخة احتياطية من الإعدادات بين حين وآخر.</div></form>`;
+    <div class="small muted" style="text-align:center">حساباتك تُحفظ على هذا الجهاز فقط. خذ نسخة احتياطية من الإعدادات بين حين وآخر.</div></form>`;
 }
 
 function vHome() {
@@ -418,6 +421,7 @@ function vDashboard() {
   const balHint = x => { const p = [0,1,2].filter(i => x.cs.bal[i] > 0).map(i => moneyC(x.cs.bal[i], i)); return p.length ? ' · ' + p.join(' + ') : ''; };
   return `<div class="stack">
     <div><div class="small muted">${fLong(t)}</div><h1>${esc(D.store.name || 'رصيد')}</h1></div>
+    ${licBanner()}
     ${curSeg()}
     <section class="hero" aria-label="الملخص"><div><div class="lbl">لك عند العملاء</div><div class="big num">${money(recv)}<small>${esc(cur.symbol)}</small></div></div>
       <div class="grid2"><div class="mini"><span class="lbl">عليك للموردين</span><b class="num">${money(pay)}</b></div><div class="mini"><span class="lbl">الصافي</span><b class="num" style="color:var(--gold)">${net > 0 ? '+' : ''}${money(net)}</b></div></div></section>
@@ -507,6 +511,7 @@ function vSettings() {
       ${row('نسخة احتياطية', 'حفظ كل البيانات في ملف (متوافق مع تطبيق أندرويد)', 'backup')}
       <label class="row" style="padding:12px 0;cursor:pointer"><span class="grow"><span style="display:block;font-weight:500">استعادة نسخة</span><span class="small muted">تستبدل البيانات الحالية بمحتوى الملف</span></span><span class="link" style="padding:0">اختيار</span>
       <input type="file" accept=".json,application/json" id="restore-file" data-live="restore" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
+    ${licCard()}
     <div class="dev"><span style="font-size:12px;color:#A9BBD1">عن المطور</span>
       <div class="pics"><img class="photo" src="img/dev_photo.jpg" alt="صورة المطور"><span class="sep"></span><img class="logo" src="img/dev_logo.png" alt="شعار أبو الغيث"></div>
       <p>${DEV_BIO}</p><a href="https://wa.me/${DEV_PHONE}" target="_blank" rel="noopener">واتساب&nbsp; <span class="ltr">${DEV_PHONE_TXT}</span></a>
@@ -704,10 +709,161 @@ function dlgDefaults() { const s = D.settings; modal(`<form class="stack" data-f
 function dlgRemind() { const s = D.settings; modal(`<form class="stack" data-form="remind"><h2>مواعيد التذكير</h2><label class="field">التذكير قبل الاستحقاق بـ (أيام)<input id="rm-b" name="before" inputmode="numeric" value="${s.remindBefore}"></label><label class="row"><input type="checkbox" id="rm-d" name="onDue" ${s.remindOnDue ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--navy)"> التذكير يوم الاستحقاق</label><label class="field">تكرار التذكير للمتأخرين كل (أيام)<input id="rm-r" name="repeat" inputmode="numeric" value="${s.repeat}"></label><div class="small muted">ضع 0 لإيقاف التكرار. تظهر التذكيرات في الرئيسية عند فتح التطبيق.</div>${dlgFoot()}</form>`); }
 function dlgTpl() { const s = D.settings; modal(`<form class="stack" data-form="tpl"><h2>قوالب الرسائل</h2><label class="field">رسالة التذكير<textarea id="tp-r" name="r" rows="6">${esc(s.tReminder)}</textarea></label><label class="field">رسالة كشف الحساب<textarea id="tp-s" name="s" rows="5">${esc(s.tStatement)}</textarea></label><label class="field">رسالة إشعار الحركة<textarea id="tp-m" name="m" rows="5">${esc(s.tMovement)}</textarea></label><div class="small muted">متغيرات: {الاسم} {المتجر} {هاتف_المتجر} {الأرصدة} {المتأخر} {التاريخ} {الحركة} {المبلغ}</div><button type="button" class="link" data-act="tplReset">استعادة النصوص الافتراضية</button>${dlgFoot()}</form>`); }
 
+
+// ================= licensing (Firebase) =================
+// Mirrors the Android app: anonymous sign-in, one registration per browser, 30-day trial,
+// license codes and remote suspension. Status is cached so the app works offline for a while.
+const FIREBASE_CONFIG = { apiKey: 'AIzaSyCYNvf-t4wVcLeUt2LQpjt2edw3ufQupwM', authDomain: 'raseed-5a704.firebaseapp.com', projectId: 'raseed-5a704', storageBucket: 'raseed-5a704.firebasestorage.app', messagingSenderId: '158000866369', appId: '1:158000866369:web:05af7db79da4b78034d2c0' };
+const Lic = (() => {
+  const DAY = 864e5, TRIAL = 30, GRACE_TRIAL = 14 * DAY, GRACE_ACTIVE = 30 * DAY, REG_GRACE = 3 * DAY, KEY = 'raseed.lic', DEV = 'raseed.device';
+  const TYPES = { month: 'شهر', quarter: '3 أشهر', half: '6 أشهر', year: 'سنة', lifetime: 'دائم' };
+  let ok = false, auth = null, db = null, FV = null, unsub = null, syncing = false;
+  try { if (window.firebase) { firebase.initializeApp(FIREBASE_CONFIG); auth = firebase.auth(); db = firebase.firestore(); FV = firebase.firestore.FieldValue; ok = true; } } catch (e) { ok = false; }
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
+  let L = load();
+  const store = () => { try { localStorage.setItem(KEY, JSON.stringify(L)); } catch (e) {} };
+  if (!L.firstLaunch) { L.firstLaunch = Date.now(); store(); }
+  const deviceId = (() => { let id = null; try { id = localStorage.getItem(DEV); } catch (e) {}
+    if (!id) { const r = new Uint8Array(12); crypto.getRandomValues(r); id = 'w_' + Array.from(r, b => b.toString(16).padStart(2, '0')).join(''); try { localStorage.setItem(DEV, id); } catch (e) {} } return id; })();
+  const deviceCode = deviceId.slice(-8).toUpperCase();
+  const deviceName = () => { const u = navigator.userAgent; const os = /iPad/.test(u) ? 'iPad' : /iPhone/.test(u) ? 'iPhone' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : 'Web';
+    const br = /CriOS|Chrome/.test(u) ? 'Chrome' : /FxiOS|Firefox/.test(u) ? 'Firefox' : /Safari/.test(u) ? 'Safari' : 'Browser'; return `${os} · ${br} (ويب)`; };
+  const ms = v => v && v.toMillis ? v.toMillis() : (typeof v === 'number' ? v : 0);
+  const timeout = (p, t = 20000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), t))]);
+
+  function state() {
+    const now = Date.now();
+    const trialStart = L.trialStart || L.firstLaunch;
+    const trialEnd = L.trialEnds || (trialStart + TRIAL * DAY);
+    const type = L.licenseType || null;
+    const exp = !type ? null : L.expiresAt ? L.expiresAt : (L.licenseDays > 0 ? (L.activatedAt || now) + L.licenseDays * DAY : null);
+    const active = !!type && (exp == null || exp > now);
+    let status;
+    if (!L.registered && !(D.store.phone || '').replace(/\D/g, '')) status = 'register';
+    else if (!L.registered && now - L.firstLaunch > REG_GRACE) status = 'online';
+    else if (L.suspended) status = 'suspended';
+    else if (active) status = (L.registered && now - (L.lastCheck || 0) > GRACE_ACTIVE) ? 'online' : 'active';
+    else if (L.registered && now - (L.lastCheck || 0) > GRACE_TRIAL) status = 'online';
+    else if (now < trialEnd) status = 'trial';
+    else status = 'expired';
+    const end = status === 'active' ? exp : trialEnd;
+    return { status, type, exp, trialEnd, registered: !!L.registered, reason: L.reason || '', deviceCode,
+      locked: ['register', 'online', 'suspended', 'expired'].includes(status),
+      daysLeft: end == null ? Infinity : Math.max(0, Math.ceil((end - now) / DAY)), typeLabel: TYPES[type] || '' };
+  }
+  function apply(snap) {
+    const d = snap.data() || {};
+    L.registered = true; L.lastCheck = Date.now();
+    if (d.trialStart) L.trialStart = ms(d.trialStart);
+    L.trialEnds = ms(d.trialEnds) || 0; L.suspended = d.suspended === true; L.reason = d.suspendReason || '';
+    L.licenseType = d.licenseType || null; L.licenseDays = d.licenseDays || 0; L.activatedAt = ms(d.activatedAt) || 0; L.expiresAt = ms(d.expiresAt) || 0;
+    store();
+  }
+  const phoneIntl = () => (normPhone(D.store.phone) || D.store.phone || '').slice(0, 30);
+  async function user() {
+    if (auth.currentUser) return auth.currentUser.uid;
+    await timeout(new Promise(res => { const u = auth.onAuthStateChanged(() => { u(); res(); }); }), 8000).catch(() => {});
+    if (auth.currentUser) return auth.currentUser.uid;
+    return (await timeout(auth.signInAnonymously())).user.uid;
+  }
+  async function register(uid) {
+    const devRef = db.collection('devices').doc(deviceId), dev = await timeout(devRef.get({ source: 'server' }));
+    const b = db.batch();
+    let trialStart;
+    if (dev.exists && dev.data().firstSeen) trialStart = dev.data().firstSeen;
+    else { b.set(devRef, { firstSeen: FV.serverTimestamp(), firstUid: uid }); trialStart = FV.serverTimestamp(); }
+    b.set(db.collection('installs').doc(uid), { storeName: (D.store.name || '').slice(0, 100), phone: phoneIntl(), deviceId, device: deviceName().slice(0, 60),
+      platform: 'web', appVersion: VERSION, createdAt: FV.serverTimestamp(), lastSeen: FV.serverTimestamp(), trialStart });
+    await timeout(b.commit());
+  }
+  function listen(ref) {
+    if (unsub) return;
+    unsub = ref.onSnapshot(s => { if (s.exists && !s.metadata.fromCache) { const was = state().locked; apply(s); if (was !== state().locked || ui.screen === 'home') render(); } }, () => {});
+  }
+  async function sync() {
+    if (!ok || syncing || !D.store.name || !(D.store.phone || '').replace(/\D/g, '')) return;
+    syncing = true;
+    try {
+      const uid = await user(), ref = db.collection('installs').doc(uid);
+      let snap = await timeout(ref.get({ source: 'server' }));
+      if (!snap.exists) { await register(uid); snap = await timeout(ref.get({ source: 'server' })); }
+      apply(snap);
+      const d = snap.data() || {}, today = Math.floor(Date.now() / DAY);
+      if (L.touchDay !== today || d.storeName !== (D.store.name || '').slice(0, 100) || d.phone !== phoneIntl() || d.appVersion !== VERSION) {
+        await timeout(ref.update({ lastSeen: FV.serverTimestamp(), storeName: (D.store.name || '').slice(0, 100), phone: phoneIntl(), appVersion: VERSION }));
+        L.touchDay = today; store();
+      }
+      listen(ref);
+    } catch (e) { /* offline or blocked: keep cached status */ }
+    finally { syncing = false; render(); }
+  }
+  function normCode(raw) { let t = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (t.startsWith('RSD')) t = t.slice(3); return t.length === 12 ? `RSD-${t.slice(0, 4)}-${t.slice(4, 8)}-${t.slice(8)}` : ''; }
+  async function redeem(raw) {
+    if (!ok) return 'التفعيل يحتاج اتصالاً بالإنترنت. افتح التطبيق من رابطه وأعد المحاولة';
+    const code = normCode(raw); if (!code) return 'اكتب الكود كما وصلك، مثال: RSD-ABCD-EFGH-JKLM';
+    try {
+      const uid = await user(), ref = db.collection('installs').doc(uid);
+      if (!(await timeout(ref.get({ source: 'server' }))).exists) await register(uid);
+      const cref = db.collection('codes').doc(code), c = await timeout(cref.get({ source: 'server' }));
+      if (!c.exists) return 'الكود غير صحيح';
+      const cd = c.data();
+      if (cd.disabled) return 'هذا الكود موقوف، تواصل مع المطور';
+      if (cd.usedBy && cd.usedDevice !== deviceId) return 'هذا الكود مستخدم على جهاز آخر';
+      const b = db.batch();
+      b.update(cref, { usedBy: uid, usedDevice: deviceId, usedAt: FV.serverTimestamp(), usedStore: (D.store.name || '').slice(0, 100) });
+      b.update(ref, { licenseCode: code, licenseType: cd.type, licenseDays: cd.days || 0, activatedAt: FV.serverTimestamp(), expiresAt: FV.delete() });
+      await timeout(b.commit());
+      apply(await timeout(ref.get({ source: 'server' }))); listen(ref);
+      return null;
+    } catch (e) {
+      if (e && e.code === 'permission-denied') return 'تعذّر استخدام هذا الكود. تواصل مع المطور';
+      return 'تعذّر الاتصال. تحقق من الإنترنت وأعد المحاولة';
+    }
+  }
+  return { state, sync, redeem, get ok() { return ok; } };
+})();
+function contactDevLink(reason) {
+  return `https://wa.me/${DEV_PHONE}?text=${encodeURIComponent(`السلام عليكم، بخصوص تطبيق رصيد: ${reason}\nالمتجر: ${D.store.name || ''}\nرقم الجهاز: ${Lic.state().deviceCode}`)}`;
+}
+function licBanner() {
+  const s = Lic.state();
+  const txt = s.status === 'trial' ? `نسخة تجريبية · بقي ${daysTxt(s.daysLeft)}` : (s.status === 'active' && s.exp && s.daysLeft <= 15) ? `ينتهي اشتراكك بعد ${daysTxt(s.daysLeft)}` : '';
+  return txt ? `<button class="warn" style="border:0;width:100%;cursor:pointer;justify-content:space-between" data-act="licDialog"><span>${ic('clock', 18)} ${txt}</span><b>تفعيل</b></button>` : '';
+}
+function licCard() {
+  const s = Lic.state(), fmt = v => fFull(new Date(v).toISOString().slice(0, 10));
+  const title = s.status === 'active' ? `النسخة مفعّلة · ${s.typeLabel}` : s.status === 'trial' ? 'نسخة تجريبية' : 'غير مفعّلة';
+  const sub = s.status === 'active' ? (s.exp ? 'صالح حتى ' + fmt(s.exp) : 'ترخيص دائم') : s.status === 'trial' ? `بقي ${daysTxt(s.daysLeft)} · تنتهي ${fmt(s.trialEnd)}` : '';
+  return `<div class="card stack"><div class="row"><span class="av" style="border-radius:12px;background:${s.status === 'active' ? 'var(--wa-soft)' : 'var(--amber-soft)'};color:${s.status === 'active' ? 'var(--wa-ink)' : 'var(--amber)'}">${ic(s.status === 'active' ? 'doc' : 'clock')}</span>
+    <div class="grow"><b style="display:block">${title}</b>${sub ? `<span class="small muted">${sub}</span><br>` : ''}<span class="tiny muted">رقم الجهاز: <span class="ltr">${s.deviceCode}</span>${s.registered ? '' : ' · لم يُسجَّل بعد'}</span></div></div>
+    <div class="row">${s.status !== 'active' || s.exp ? '<button class="link" data-act="licDialog">إدخال كود تفعيل</button>' : ''}<a class="link" style="color:var(--wa-ink);text-decoration:none" href="${contactDevLink('استفسار عن الترخيص')}" target="_blank" rel="noopener">تواصل مع المطور</a></div></div>`;
+}
+function vLock() {
+  const s = Lic.state();
+  const m = { suspended: ['تم إيقاف هذه النسخة', s.reason || 'تواصل مع المطور لمعرفة السبب وإعادة التفعيل.'],
+    online: ['يلزم الاتصال بالإنترنت', 'اتصل بالإنترنت مرة واحدة للتحقق من نسختك، ثم يعمل التطبيق كالمعتاد.'],
+    register: ['أكمل تسجيل نسختك', 'أدخل رقم جوال المتجر لتسجيل نسختك وبدء الفترة التجريبية (30 يوماً). يُرسل اسم المتجر ورقم الجوال إلى المطور لتفعيل النسخة والتواصل معك فقط.'],
+    expired: [s.type ? 'انتهى اشتراكك' : 'انتهت الفترة التجريبية', 'للاستمرار في استخدام رصيد أدخل كود التفعيل، أو تواصل مع المطور للحصول عليه.'] }[s.status];
+  const form = s.status === 'expired' ? `<form class="stack" data-form="licRedeem" style="width:100%"><label class="field">كود التفعيل<input id="lk-code" name="code" class="ltr" placeholder="RSD-XXXX-XXXX-XXXX" autocomplete="off" required></label><div id="lk-err" class="small" style="color:#FFB4A9" hidden></div><button class="btn" style="background:#F2C66D;color:#18212B">تفعيل</button></form>`
+    : s.status === 'online' ? `<button class="btn" style="background:#F2C66D;color:#18212B" data-act="licRetry">إعادة المحاولة</button>`
+    : s.status === 'register' ? `<form class="stack" data-form="licRegister" style="width:100%"><div class="row" style="align-items:flex-end"><label class="field" style="width:96px">المفتاح<input id="lk-cc" name="cc" class="ltr" value="${esc(D.settings.cc)}" inputmode="numeric"></label><label class="field grow">رقم الجوال<input id="lk-phone" name="phone" class="ltr" inputmode="tel" required minlength="7" value="${esc(D.store.phone)}"></label></div><button class="btn" style="background:#F2C66D;color:#18212B">تسجيل</button></form>` : '';
+  return `<div class="onb" style="margin-top:12px"><div style="width:68px;height:68px;border-radius:20px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#F2C66D">${ic(s.status === 'online' ? 'phone' : 'clock', 32)}</div>
+    <h1 style="color:#fff">${m[0]}</h1><p style="color:#C9D6E6;margin:0">${esc(m[1])}</p>${form}
+    ${s.status !== 'register' ? `<a class="btn" style="background:transparent;border:1.5px solid #F2C66D;color:#F2C66D" href="${contactDevLink(s.status === 'suspended' ? 'النسخة موقوفة' : 'أرغب في الحصول على كود تفعيل')}" target="_blank" rel="noopener">${ic('chat')} تواصل مع المطور عبر واتساب</a>
+    <button class="link" style="color:#C9D6E6" data-act="backup">حفظ نسخة احتياطية من بياناتي</button><span class="tiny" style="color:#8FA6C2">رقم الجهاز: <span class="ltr">${s.deviceCode}</span></span>` : ''}
+    <div class="credit" style="margin-top:12px"><span class="t">تطوير</span><img src="img/dev_logo.png" alt="شعار أبو الغيث" style="width:64px;height:64px"><a href="https://wa.me/${DEV_PHONE}" target="_blank" rel="noopener" class="ltr">${DEV_PHONE_TXT}</a></div></div>`;
+}
+function licDialog() {
+  modal(`<form class="stack" data-form="licRedeem"><h2>تفعيل رصيد</h2><label class="field">كود التفعيل<input id="ld-code" name="code" class="ltr" placeholder="RSD-XXXX-XXXX-XXXX" autocomplete="off" required></label>
+    <div id="lk-err" class="small" style="color:var(--red)" hidden></div>
+    <a class="small" style="color:var(--wa-ink)" href="${contactDevLink('أرغب في الحصول على كود تفعيل')}" target="_blank" rel="noopener">لا تملك كوداً؟ تواصل مع المطور</a>${dlgFoot('تفعيل')}</form>`);
+}
+
 // ================= render =================
 function render() {
   const app = document.getElementById('app');
   const v = { splash: vSplash, onboard: vOnboard, home: vHome, account: vAccount, accountEdit: vAccountEdit, entry: vEntry, wa: vWa }[ui.screen] || vHome;
+  if (ui.screen !== 'splash' && ui.screen !== 'onboard' && D.store.name && Lic.state().locked) { app.innerHTML = vLock(); return; }
   app.innerHTML = v();
   if (ui.screen === 'entry') updateLimitWarn();
 }
@@ -766,6 +922,8 @@ const A = {
   },
   dueQuick: d => { const f = document.getElementById('f-entry'); const date = f.querySelector('[name=date]').value || todayISO(); f.querySelector('[name=due]').value = +d.d ? addDays(date, +d.d) : ''; },
   dlgStore, dlgCur, dlgDefaults, dlgRemind, dlgTpl,
+  licDialog: () => licDialog(),
+  licRetry: () => { toast('جارٍ التحقق…'); Lic.sync(); },
   tplReset: () => { document.getElementById('tp-r').value = T_REM; document.getElementById('tp-s').value = T_ST; document.getElementById('tp-m').value = T_MV; },
   rmLogo: () => { LOGO = null; try { localStorage.removeItem(LOGO_KEY); } catch (e) {} render(); },
   backup: async () => {
@@ -775,9 +933,19 @@ const A = {
 };
 
 const F = {
+  licRedeem: async (fd, f) => {
+    const btn = f.querySelector('button:not([type=button])'), err = document.getElementById('lk-err');
+    if (btn) { btn.disabled = true; btn.textContent = 'جارٍ التفعيل…'; }
+    const msg = await Lic.redeem(fd.get('code'));
+    if (msg) { if (err) { err.hidden = false; err.textContent = msg; } if (btn) { btn.disabled = false; btn.textContent = 'تفعيل'; } return; }
+    modal(''); render(); toast('تم تفعيل رصيد بنجاح');
+  },
+  licRegister: fd => {
+    D.settings.cc = String(fd.get('cc') || '').replace(/\D/g, '') || D.settings.cc; D.store.phone = String(fd.get('phone') || '').trim(); save(); render(); Lic.sync();
+  },
   onboard: fd => {
     D.store.name = String(fd.get('name')).trim(); D.store.phone = String(fd.get('phone') || '').trim();
-    D.settings.cc = String(fd.get('cc') || '').replace(/\D/g, '') || '967'; save(); home(0);
+    D.settings.cc = String(fd.get('cc') || '').replace(/\D/g, '') || '967'; save(); home(0); Lic.sync();
   },
   account: fd => {
     const ex = ui.p.id ? D.accounts.find(x => x.id === ui.p.id) : null, type = fd.get('type');
@@ -870,8 +1038,9 @@ function restoreForm() {
 try { if ('serviceWorker' in navigator && location.protocol === 'https:' && !location.hostname.endsWith('claude.ai')) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
 render();
 setTimeout(() => { ui.screen = D.store.name ? 'home' : 'onboard'; render(); }, 1500);
+Lic.sync();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { render(); Lic.sync(); } });
 })();
 </script>
-
 </body>
 </html>
