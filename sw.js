@@ -1,5 +1,5 @@
 // Offline support: the app shell is cached on install; fonts and libraries are cached the first time they load.
-const CACHE = 'raseed-v2';
+const CACHE = 'raseed-v4';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'img/dev_logo.png', 'img/dev_photo.jpg',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

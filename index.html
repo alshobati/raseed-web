@@ -162,6 +162,15 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 .credit .t{color:#A9BBD1;font-size:13px}
 .credit img{width:84px;height:84px;object-fit:contain}
 .credit a{color:#F2C66D;font-weight:500;text-decoration:none;font-size:14px}
+.pinpad{display:grid;grid-template-columns:repeat(3,72px);gap:14px 22px;justify-content:center;direction:ltr;margin:6px auto 0}
+.pinpad button{width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:27px;font-weight:500;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.pinpad button:active{transform:scale(.94)} .pinpad button.ghost{background:transparent;border-color:transparent}
+.pinpad button:disabled{opacity:.4}
+.pindots{display:flex;gap:14px;justify-content:center;direction:ltr}
+.pindots i{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--faint)} .pindots i.on{background:var(--navy);border-color:var(--navy)}
+.pinerr{min-height:38px;color:var(--red);font-size:13px;text-align:center;margin:12px 0 6px}
+.dark .pinpad button{background:rgba(255,255,255,.08);border-color:transparent;color:#fff} .dark .pinpad button.ghost{background:transparent}
+.dark .pindots i{border-color:#C9D6E6} .dark .pindots i.on{background:#F2C66D;border-color:#F2C66D} .dark .pinerr{color:#FFB4A9}
 .onb{background:#1F3A5F;color:#fff;border-radius:24px;padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 .onb .field{color:#C9D6E6;text-align:start;width:100%}
 .onb .field input{background:#fff;color:#18212B;border:0}
@@ -202,7 +211,7 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 const KEY = 'raseed.v1', LOGO_KEY = 'raseed.logo';
 const DEV_PHONE = '967781211350', DEV_PHONE_TXT = '+967 781 211 350';
 const DEV_BIO = 'باحث في علوم الإدارة، ومحاسب مالي متمكّن، وخبير في تقنيات الحاسب الآلي وتطوير الأنظمة، إلى جانب خبرته في التصميم الجرافيكي والتسويق الرقمي وتطوير الأعمال. يجمع بين الدقة المالية والرؤية الإدارية والحس الإبداعي، ليقدّم حلولاً رقمية تخدم أصحاب الأعمال وتنمّي مشاريعهم.';
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const DEF_CUR = [{name:'ريال يمني',symbol:'ر.ي'},{name:'ريال سعودي',symbol:'ر.س'},{name:'دولار',symbol:'$'}];
 const T_REM = 'السلام عليكم {الاسم}،\nنذكّركم بأن رصيدكم المستحق لدى {المتجر}:\n{الأرصدة}\n{المتأخر}نرجو التكرم بالسداد، شاكرين حسن تعاملكم.\nللتواصل: {هاتف_المتجر}';
 const T_ST = 'السلام عليكم {الاسم}،\nمرفق كشف حسابكم لدى {المتجر} حتى تاريخ {التاريخ}:\n{الأرصدة}\nللاستفسار: {هاتف_المتجر}';
@@ -210,6 +219,9 @@ const T_MV = 'السلام عليكم {الاسم}،\nتم تسجيل {الحر�
 const TYPE_LABEL = {CUSTOMER:'عميل', SUPPLIER:'مورد', BOTH:'عميل ومورد'};
 
 const I = { // inline stroke icons
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  sms:'<path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12h5"/>',
+  del:'<path d="M21 5H9l-6 7 6 7h12z"/><path d="m16 9-5 6M11 9l5 6"/>',
   home:'<path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/>',
   users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
   chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
@@ -367,6 +379,8 @@ function buildMessage(type, s, side, entry) {
     .replaceAll('{الحركة}', mv).replaceAll('{المبلغ}', entry ? moneyC(entry.amount, entry.currency) : '').trim();
 }
 const waLink = (phone, text) => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+// iPhone uses "&body=", Android "?body="; the Messages app opens with the text ready.
+const smsLink = (phone, text) => `sms:+${phone}${/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(text)}`;
 
 // ================= UI state =================
 const ui = { screen: 'splash', tab: 0, cur: 0, group: 0, filter: 0, q: '', stack: [], p: {} };
@@ -511,6 +525,7 @@ function vSettings() {
       ${row('نسخة احتياطية', 'حفظ كل البيانات في ملف (متوافق مع تطبيق أندرويد)', 'backup')}
       <label class="row" style="padding:12px 0;cursor:pointer"><span class="grow"><span style="display:block;font-weight:500">استعادة نسخة</span><span class="small muted">تستبدل البيانات الحالية بمحتوى الملف</span></span><span class="link" style="padding:0">اختيار</span>
       <input type="file" accept=".json,application/json" id="restore-file" data-live="restore" style="position:absolute;width:1px;height:1px;opacity:0"></label></div>
+    <div class="card" style="padding:4px 14px">${row('قفل التطبيق', PinLock.summary(), 'pinSettings')}</div>
     ${licCard()}
     <div class="dev"><span style="font-size:12px;color:#A9BBD1">عن المطور</span>
       <div class="pics"><img class="photo" src="img/dev_photo.jpg" alt="صورة المطور"><span class="sep"></span><img class="logo" src="img/dev_logo.png" alt="شعار أبو الغيث"></div>
@@ -607,13 +622,14 @@ function vWa() {
   const types = entry ? [['REMINDER', 'تذكير'], ['STATEMENT', 'كشف حساب'], ['MOVEMENT', 'إشعار حركة']] : [['REMINDER', 'تذكير بالسداد'], ['STATEMENT', 'كشف حساب']];
   const type = ui.p.type || 'REMINDER';
   const text = buildMessage(type, s, side, entry), phone = normPhone(a.phone);
-  return top('إرسال عبر واتساب', a.name) + `<div class="stack">
+  return top('إرسال رسالة', a.name) + `<div class="stack">
     <div class="card row">${av(a)}<div class="grow"><b>${esc(a.name)}</b><div class="small ${phone ? 'muted' : ''}" style="${phone ? '' : 'color:var(--red)'}">${phone ? `<span class="ltr">+${phone}</span>` : 'لا يوجد رقم هاتف — أضفه من تعديل الحساب'}</div></div></div>
     <div><div class="small muted" style="margin-bottom:6px">نوع الرسالة</div><div class="segs">${types.map(([v, l]) => `<button class="segbtn ${type === v ? 'on' : ''}" data-act="waType" data-t="${v}">${l}</button>`).join('')}</div></div>
     <label class="field">نص الرسالة (يمكنك تعديله)<textarea id="wa-text" rows="9" data-live="waText" style="background:var(--wa-soft);border-color:var(--wa-soft)">${esc(text)}</textarea></label>
-    ${phone ? `<a class="btn wa" id="wa-go" href="${waLink(phone, text)}" target="_blank" rel="noopener" data-act="waSent">${ic('chat')} فتح واتساب والإرسال</a>` : ''}
+    ${phone ? `<a class="btn wa" id="wa-go" href="${waLink(phone, text)}" target="_blank" rel="noopener" data-act="waSent">${ic('chat')} فتح واتساب والإرسال</a>
+    <a class="btn out" id="sms-go" href="${smsLink(phone, text)}" data-act="waSent">${ic('sms')} إرسال رسالة نصية SMS</a>` : ''}
     <button class="btn out" data-act="statement" data-side="${side}" data-withtext="1">${ic('doc')} إرفاق كشف حساب PDF</button>
-    <div class="small muted">يفتح واتساب على محادثة العميل والرسالة جاهزة، وما عليك إلا الضغط على إرسال. ولإرسال الكشف: أنشئه ثم اختر واتساب من قائمة المشاركة.</div></div>`;
+    <div class="small muted">يفتح واتساب أو تطبيق الرسائل على رقم العميل والرسالة جاهزة، وما عليك إلا الضغط على إرسال (المتصفح لا يسمح بالإرسال التلقائي). ولإرسال الكشف: أنشئه ثم اختر واتساب من قائمة المشاركة.</div></div>`;
 }
 
 // ================= statement / report (paper) =================
@@ -747,7 +763,7 @@ const Lic = (() => {
     else if (now < trialEnd) status = 'trial';
     else status = 'expired';
     const end = status === 'active' ? exp : trialEnd;
-    return { status, type, exp, trialEnd, registered: !!L.registered, reason: L.reason || '', deviceCode,
+    return { status, type, exp, trialEnd, registered: !!L.registered, reason: L.reason || '', deviceCode, err: !ok ? 'firebase-not-loaded' : (L.err || ''),
       locked: ['register', 'online', 'suspended', 'expired'].includes(status),
       daysLeft: end == null ? Infinity : Math.max(0, Math.ceil((end - now) / DAY)), typeLabel: TYPES[type] || '' };
   }
@@ -794,7 +810,8 @@ const Lic = (() => {
         L.touchDay = today; store();
       }
       listen(ref);
-    } catch (e) { /* offline or blocked: keep cached status */ }
+      if (L.err) { delete L.err; store(); }
+    } catch (e) { L.err = String((e && (e.code || e.message)) || 'unknown').slice(0, 80); store(); }
     finally { syncing = false; render(); }
   }
   function normCode(raw) { let t = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (t.startsWith('RSD')) t = t.slice(3); return t.length === 12 ? `RSD-${t.slice(0, 4)}-${t.slice(4, 8)}-${t.slice(8)}` : ''; }
@@ -835,8 +852,8 @@ function licCard() {
   const title = s.status === 'active' ? `النسخة مفعّلة · ${s.typeLabel}` : s.status === 'trial' ? 'نسخة تجريبية' : 'غير مفعّلة';
   const sub = s.status === 'active' ? (s.exp ? 'صالح حتى ' + fmt(s.exp) : 'ترخيص دائم') : s.status === 'trial' ? `بقي ${daysTxt(s.daysLeft)} · تنتهي ${fmt(s.trialEnd)}` : '';
   return `<div class="card stack"><div class="row"><span class="av" style="border-radius:12px;background:${s.status === 'active' ? 'var(--wa-soft)' : 'var(--amber-soft)'};color:${s.status === 'active' ? 'var(--wa-ink)' : 'var(--amber)'}">${ic(s.status === 'active' ? 'doc' : 'clock')}</span>
-    <div class="grow"><b style="display:block">${title}</b>${sub ? `<span class="small muted">${sub}</span><br>` : ''}<span class="tiny muted">رقم الجهاز: <span class="ltr">${s.deviceCode}</span>${s.registered ? '' : ' · لم يُسجَّل بعد'}</span></div></div>
-    <div class="row">${s.status !== 'active' || s.exp ? '<button class="link" data-act="licDialog">إدخال كود تفعيل</button>' : ''}<a class="link" style="color:var(--wa-ink);text-decoration:none" href="${contactDevLink('استفسار عن الترخيص')}" target="_blank" rel="noopener">تواصل مع المطور</a></div></div>`;
+    <div class="grow"><b style="display:block">${title}</b>${sub ? `<span class="small muted">${sub}</span><br>` : ''}<span class="tiny muted">رقم الجهاز: <span class="ltr">${s.deviceCode}</span>${s.registered ? '' : ' · لم يُسجَّل بعد'}</span>${s.err ? `<br><span class="tiny" style="color:var(--red)">تعذّر الاتصال بالخادم: <span class="ltr">${esc(s.err)}</span></span>` : ''}</div></div>
+    <div class="row">${!s.registered || s.err ? '<button class="link" data-act="licRetry">إعادة المحاولة</button>' : ''}${s.status !== 'active' || s.exp ? '<button class="link" data-act="licDialog">إدخال كود تفعيل</button>' : ''}<a class="link" style="color:var(--wa-ink);text-decoration:none" href="${contactDevLink('استفسار عن الترخيص')}" target="_blank" rel="noopener">تواصل مع المطور</a></div></div>`;
 }
 function vLock() {
   const s = Lic.state();
@@ -859,10 +876,140 @@ function licDialog() {
     <a class="small" style="color:var(--wa-ink)" href="${contactDevLink('أرغب في الحصول على كود تفعيل')}" target="_blank" rel="noopener">لا تملك كوداً؟ تواصل مع المطور</a>${dlgFoot('تفعيل')}</form>`);
 }
 
+// ================= app lock (PIN) =================
+const PinLock = (() => {
+  const K = 'raseed.pin', ITER = 100000, FREE = 5;
+  let C = {}; try { C = JSON.parse(localStorage.getItem(K)) || {}; } catch (e) {}
+  let locked = !!C.hash, hiddenAt = 0;
+  const persist = () => { try { localStorage.setItem(K, JSON.stringify(C)); } catch (e) {} };
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function derive(pin, salt) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    return b64(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: unb64(salt), iterations: ITER }, key, 256));
+  }
+  const supported = () => !!(window.crypto && crypto.subtle);
+  const waitSec = () => Math.max(0, Math.ceil(((C.until || 0) - Date.now()) / 1000));
+  async function set(pin) {
+    const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+    C = { ...C, salt, hash: await derive(pin, salt), len: pin.length, fails: 0, until: 0 };
+    if (C.timeout == null) C.timeout = 60;
+    persist(); locked = false;
+  }
+  async function check(pin) {
+    if (waitSec() > 0 || !C.hash) return false;
+    const ok = (await derive(pin, C.salt)) === C.hash;
+    if (ok) { C.fails = 0; C.until = 0; }
+    else { C.fails = (C.fails || 0) + 1; if (C.fails >= FREE) C.until = Date.now() + Math.min(300, 30 * 2 ** Math.min(4, C.fails - FREE)) * 1000; }
+    persist(); return ok;
+  }
+  const TL = { 0: 'فوراً', 60: 'بعد دقيقة', 300: 'بعد 5 دقائق' };
+  return {
+    supported, set, check, waitSec,
+    get enabled() { return !!C.hash; }, get locked() { return locked && !!C.hash; }, get len() { return C.len || 4; },
+    get timeout() { return C.timeout == null ? 60 : C.timeout; },
+    triesLeft: () => Math.max(0, FREE - (C.fails || 0)),
+    setTimeout(sec) { C.timeout = sec; persist(); },
+    unlock() { locked = false; hiddenAt = 0; },
+    disable() { C = {}; try { localStorage.removeItem(K); } catch (e) {} locked = false; },
+    onHide() { if (C.hash && !locked) hiddenAt = Date.now(); },
+    onShow() { if (C.hash && hiddenAt && Date.now() - hiddenAt >= this.timeout * 1000) locked = true; hiddenAt = 0; },
+    summary() { return !C.hash ? 'متوقف · احمِ حسابات عملائك برمز سري' : 'مفعّل · يُقفل ' + (TL[this.timeout] || 'بعد دقيقة'); },
+    TL
+  };
+})();
+// What the keypad is doing: unlock, set1/set2 (choosing a PIN), or verify (then: change | off).
+let pin = { mode: 'unlock', buf: '', err: '', busy: false };
+function pinPadHtml() {
+  const len = pin.mode === 'set1' || pin.mode === 'set2' ? pin.len : PinLock.len, w = PinLock.waitSec() > 0 && pin.mode !== 'set1' && pin.mode !== 'set2';
+  const k = d => `<button type="button" data-act="pinKey" data-k="${d}" ${w ? 'disabled' : ''}>${d}</button>`;
+  return `<div class="pindots" id="pin-dots">${Array.from({ length: len }, (_, i) => `<i class="${i < pin.buf.length ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="pinerr" id="pin-err">${esc(w ? `محاولات خاطئة كثيرة، حاول بعد ${PinLock.waitSec()} ثانية` : pin.err)}</div>
+    <div class="pinpad">${[1,2,3,4,5,6,7,8,9].map(k).join('')}<span></span>${k(0)}<button type="button" class="ghost" data-act="pinKey" data-k="del" aria-label="حذف">${ic('del', 26)}</button></div>`;
+}
+let pinTimer = null;
+function pinRedraw() {
+  const box = document.getElementById('pin-box'); if (!box) return;
+  box.innerHTML = pinPadHtml();
+  clearTimeout(pinTimer);
+  if (PinLock.waitSec() > 0) pinTimer = setTimeout(() => { if (PinLock.waitSec() === 0) pin.err = ''; pinRedraw(); }, 1000);
+}
+function vPinLock() {
+  return `<div class="onb dark" style="margin-top:12px;min-height:calc(100vh - 60px);justify-content:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#F2C66D">${ic('lock', 30)}</div>
+    <h1 style="color:#fff;margin:4px 0 0">رصيد</h1>${D.store.name ? `<div style="color:#C9D6E6">${esc(D.store.name)}</div>` : ''}
+    <div style="color:#fff;margin-top:18px">أدخل رمز القفل</div>
+    <div id="pin-box" style="width:100%">${pinPadHtml()}</div>
+    <button class="link" style="color:#C9D6E6;margin-top:6px" data-act="pinForgot">نسيت الرمز؟</button></div>`;
+}
+function pinSheet() {
+  const title = { set1: 'اختر رمز القفل', set2: 'أعد كتابة الرمز للتأكيد', verify: pin.then === 'off' ? 'أدخل الرمز لإيقاف القفل' : 'أدخل الرمز الحالي' }[pin.mode];
+  modal(`<div class="stack" style="align-items:center;text-align:center"><h2>${title}</h2>
+    ${pin.mode === 'set1' ? `<div class="small muted">لا تستخدم رمزاً سهلاً مثل 1234 أو تاريخ ميلادك</div><div class="segs" style="width:100%">${[4, 6].map(n => `<button type="button" class="segbtn ${pin.len === n ? 'on' : ''}" data-act="pinLen" data-n="${n}">${n} أرقام</button>`).join('')}</div>` : ''}
+    <div id="pin-box" style="width:100%">${pinPadHtml()}</div>
+    <button class="btn out" data-act="closeModal">إلغاء</button></div>`);
+  pinRedraw();
+}
+function pinSettings() {
+  pin = { mode: 'unlock', buf: '', err: '' };
+  if (!PinLock.supported()) { modal(`<h2>قفل التطبيق</h2><div class="muted">هذا المتصفح لا يدعم القفل. افتح رصيد من Safari أو Chrome بإصدار حديث.</div><button class="btn out" data-act="closeModal">إغلاق</button>`); return; }
+  if (!PinLock.enabled) {
+    modal(`<div class="stack"><h2>قفل التطبيق</h2><div class="muted">يطلب رمزاً سرياً عند فتح رصيد، حتى لا يطّلع أحد على حسابات عملائك إن وصل إلى جهازك.</div>
+      <div class="warn" style="display:block">تنبيه: لا يمكن استعادة الرمز إن نسيته؛ الحل الوحيد حينها حذف بيانات رصيد من هذا الجهاز ثم استعادة نسخة احتياطية. احفظ الرمز جيداً وخذ نسخة احتياطية باستمرار.</div>
+      <button class="btn" data-act="pinSetup">تعيين رمز القفل</button><button class="btn out" data-act="closeModal">إلغاء</button></div>`);
+    return;
+  }
+  modal(`<div class="stack"><h2>قفل التطبيق</h2><div class="muted">القفل مفعّل برمز من ${PinLock.len} أرقام.</div>
+    <div><div class="small muted" style="margin-bottom:6px">القفل بعد الخروج من التطبيق</div><div class="segs">${[0, 60, 300].map(t => `<button type="button" class="segbtn ${PinLock.timeout === t ? 'on' : ''}" data-act="pinTimeout" data-s="${t}">${PinLock.TL[t]}</button>`).join('')}</div></div>
+    <button class="btn out" data-act="pinVerify" data-then="change">تغيير الرمز</button>
+    <button class="btn out" style="border-color:var(--red);color:var(--red)" data-act="pinVerify" data-then="off">إيقاف القفل</button>
+    <button class="link" data-act="closeModal">إغلاق</button></div>`);
+}
+async function pinPress(k) {
+  if (pin.busy) return;
+  const setting = pin.mode === 'set1' || pin.mode === 'set2';
+  if (!setting && PinLock.waitSec() > 0) return;
+  const len = setting ? pin.len : PinLock.len;
+  if (k === 'del') { pin.buf = pin.buf.slice(0, -1); pinRedraw(); return; }
+  if (pin.buf.length >= len) return;
+  pin.buf += k; pin.err = ''; pinRedraw();
+  if (pin.buf.length < len) return;
+  const p = pin.buf; pin.buf = '';
+  await new Promise(r => setTimeout(r, 120));
+  if (pin.mode === 'set1') { pin = { ...pin, mode: 'set2', first: p }; pinSheet(); return; }
+  if (pin.mode === 'set2') {
+    if (p === pin.first) { pin.busy = true; await PinLock.set(p); pin = { mode: 'unlock', buf: '', err: '' }; modal(''); render(); toast('تم تفعيل قفل التطبيق'); }
+    else { pin = { ...pin, mode: 'set1', first: null, err: 'الرمزان غير متطابقين، أعد المحاولة' }; pinSheet(); }
+    return;
+  }
+  pin.busy = true;
+  const ok = await PinLock.check(p);
+  pin.busy = false;
+  if (!ok) {
+    const left = PinLock.triesLeft();
+    pin.err = PinLock.waitSec() > 0 ? '' : left >= 1 && left <= 3 ? `رمز غير صحيح · بقيت ${left} محاولات قبل الإيقاف المؤقت` : 'رمز غير صحيح';
+    pinRedraw(); return;
+  }
+  if (pin.mode === 'unlock') { PinLock.unlock(); render(); return; }
+  if (pin.then === 'change') { pin = { mode: 'set1', buf: '', err: '', len: PinLock.len }; pinSheet(); return; }
+  PinLock.disable(); pin = { mode: 'unlock', buf: '', err: '' }; modal(''); render(); toast('تم إيقاف قفل التطبيق');
+}
+document.addEventListener('keydown', ev => {
+  if (!document.getElementById('pin-box')) return;
+  if (/^[0-9]$/.test(ev.key)) { ev.preventDefault(); pinPress(ev.key); }
+  else if (ev.key === 'Backspace') { ev.preventDefault(); pinPress('del'); }
+});
+
 // ================= render =================
 function render() {
   const app = document.getElementById('app');
   const v = { splash: vSplash, onboard: vOnboard, home: vHome, account: vAccount, accountEdit: vAccountEdit, entry: vEntry, wa: vWa }[ui.screen] || vHome;
+  if (ui.screen !== 'splash' && ui.screen !== 'onboard' && D.store.name && PinLock.locked) {
+    // The open screen stays in `ui`, so it comes back as it was after unlocking.
+    if (pin.mode !== 'unlock') pin = { mode: 'unlock', buf: '', err: '' };
+    if (!document.querySelector('[data-act="pinWipe"],[data-act="pinWipeYes"]')) modal('');
+    app.innerHTML = vPinLock(); pinRedraw(); return;
+  }
   if (ui.screen !== 'splash' && ui.screen !== 'onboard' && D.store.name && Lic.state().locked) { app.innerHTML = vLock(); return; }
   app.innerHTML = v();
   if (ui.screen === 'entry') updateLimitWarn();
@@ -879,6 +1026,17 @@ function updateLimitWarn() {
 
 // ================= actions =================
 const A = {
+  pinKey: d => pinPress(d.k),
+  pinSettings: () => pinSettings(),
+  pinSetup: () => { pin = { mode: 'set1', buf: '', err: '', len: 4 }; pinSheet(); },
+  pinLen: d => { pin = { ...pin, len: +d.n, buf: '', err: '' }; pinSheet(); },
+  pinTimeout: d => { PinLock.setTimeout(+d.s); pinSettings(); render(); },
+  pinVerify: d => { pin = { mode: 'verify', then: d.then, buf: '', err: '' }; pinSheet(); },
+  pinForgot: () => modal(`<div class="stack"><h2>نسيت رمز القفل</h2><div class="muted">لا يمكن استعادة الرمز لأنه لا يُحفظ إلا مشفّراً على هذا الجهاز. الحل الوحيد هو حذف بيانات رصيد من هذا الجهاز، ثم استعادة آخر نسخة احتياطية لديك من الإعدادات.</div>
+    <button class="btn" style="background:var(--red)" data-act="pinWipe">حذف بيانات هذا الجهاز</button><button class="btn out" data-act="closeModal">إلغاء</button></div>`),
+  pinWipe: () => modal(`<div class="stack"><h2>تأكيد الحذف النهائي</h2><div class="muted">ستُحذف جميع الحسابات والحركات والإعدادات وشعار المتجر من هذا الجهاز، ولا يمكن التراجع. حالة الترخيص لا تتأثر.</div>
+    <button class="btn" style="background:var(--red)" data-act="pinWipeYes">نعم، احذف كل شيء</button><button class="btn out" data-act="closeModal">إلغاء</button></div>`),
+  pinWipeYes: () => { try { [KEY, LOGO_KEY, 'raseed.pin'].forEach(k => localStorage.removeItem(k)); } catch (e) {} location.reload(); },
   back, closeModal: () => modal(''), closeModalBg: (d, el, ev) => { if (ev.target === el) modal(''); },
   tab: d => { ui.tab = +d.i; render(); window.scrollTo(0, 0); },
   cur: d => { ui.cur = +d.i; render(); },
@@ -1001,7 +1159,7 @@ document.addEventListener('submit', ev => { const f = ev.target; if (!f.dataset.
 document.addEventListener('input', ev => {
   const el = ev.target, live = el.dataset.live;
   if (live === 'search') { ui.q = el.value; const pos = el.selectionStart; render(); const n = document.getElementById('acc-q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }
-  else if (live === 'waText') { const go_ = document.getElementById('wa-go'); const a = D.accounts.find(x => x.id === ui.p.id); if (go_ && a) go_.href = waLink(normPhone(a.phone), el.value); }
+  else if (live === 'waText') { const go_ = document.getElementById('wa-go'); const a = D.accounts.find(x => x.id === ui.p.id); if (go_ && a) go_.href = waLink(normPhone(a.phone), el.value); const sm = document.getElementById('sms-go'); if (sm && a) sm.href = smsLink(normPhone(a.phone), el.value); }
   else if (ui.screen === 'entry') updateLimitWarn();
 });
 document.addEventListener('change', ev => {
@@ -1039,7 +1197,10 @@ try { if ('serviceWorker' in navigator && location.protocol === 'https:' && !loc
 render();
 setTimeout(() => { ui.screen = D.store.name ? 'home' : 'onboard'; render(); }, 1500);
 Lic.sync();
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { render(); Lic.sync(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { PinLock.onHide(); return; }
+  PinLock.onShow(); render(); Lic.sync();
+});
 })();
 </script>
 </body>
