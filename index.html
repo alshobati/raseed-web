@@ -211,7 +211,7 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 const KEY = 'raseed.v1', LOGO_KEY = 'raseed.logo';
 const DEV_PHONE = '967781211350', DEV_PHONE_TXT = '+967 781 211 350';
 const DEV_BIO = 'باحث في علوم الإدارة، ومحاسب مالي متمكّن، وخبير في تقنيات الحاسب الآلي وتطوير الأنظمة، إلى جانب خبرته في التصميم الجرافيكي والتسويق الرقمي وتطوير الأعمال. يجمع بين الدقة المالية والرؤية الإدارية والحس الإبداعي، ليقدّم حلولاً رقمية تخدم أصحاب الأعمال وتنمّي مشاريعهم.';
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const DEF_CUR = [{name:'ريال يمني',symbol:'ر.ي'},{name:'ريال سعودي',symbol:'ر.س'},{name:'دولار',symbol:'$'}];
 const T_REM = 'السلام عليكم {الاسم}،\nنذكّركم بأن رصيدكم المستحق لدى {المتجر}:\n{الأرصدة}\n{المتأخر}نرجو التكرم بالسداد، شاكرين حسن تعاملكم.\nللتواصل: {هاتف_المتجر}';
 const T_ST = 'السلام عليكم {الاسم}،\nمرفق كشف حسابكم لدى {المتجر} حتى تاريخ {التاريخ}:\n{الأرصدة}\nللاستفسار: {هاتف_المتجر}';
@@ -649,15 +649,16 @@ function statementPaper(a, side) {
   const mine = D.entries.filter(e => e.accountId === a.id && e.side === side);
   let html = `<div class="paper">${paperHeader(side === 'CUSTOMER' ? 'كشف حساب عميل' : 'كشف حساب مورد')}
     <div style="display:flex;justify-content:space-between;margin:16px 0"><div><div style="font-size:11px;color:#5A6573">${side === 'CUSTOMER' ? 'العميل' : 'المورد'}</div><div style="font-size:17px;font-weight:600">${esc(a.name)}</div></div><div class="ltr" style="color:#5A6573;font-size:13px">${esc(a.phone || '')}</div></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">${[0,1,2].map(c => `<div style="background:#F4F5F7;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#5A6573">الرصيد بال${esc(cur[c].name)}</div><div style="font-size:18px;font-weight:700;color:${st.bal[c] > 0 ? '#B42318' : '#18212B'}">${money(st.bal[c])}</div></div>`).join('')}</div>`;
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">${[0,1,2].map(c => `<div style="background:#F4F5F7;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#5A6573">${side === 'CUSTOMER' ? 'الرصيد عليه' : 'الرصيد له'} بال${esc(cur[c].name)}</div><div style="font-size:18px;font-weight:700;color:${st.bal[c] > 0 ? '#B42318' : '#18212B'}">${money(st.bal[c])}</div></div>`).join('')}</div>`;
   [0,1,2].forEach(c => {
     const list = mine.filter(e => e.currency === c).sort((x, y) => x.date.localeCompare(y.date) || x.createdAt - y.createdAt);
     if (!list.length) return;
-    let bal = 0, dr = 0, cr = 0;
-    const rows = list.map(e => { const d = e.kind === 'DEBT'; if (d) { bal += e.amount; dr += e.amount; } else { bal -= e.amount; cr += e.amount; }
-      return `<tr><td>${fShort(e.date)}</td><td>${esc(e.note || entryLabel(e))}${d && e.due ? ` <span style="color:#5A6573">(يستحق ${fShort(e.due)})</span>` : ''}</td><td>${d ? money(e.amount) : ''}</td><td>${d ? '' : money(e.amount)}</td><td><b>${money(bal)}</b></td></tr>`; }).join('');
-    html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 6px">الحركات بال${esc(cur[c].name)}</div><table><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr><td></td><td>الإجمالي</td><td>${money(dr)}</td><td>${money(cr)}</td><td style="color:#B42318">${money(bal)}</td></tr></tfoot></table>`;
+    // "عليه" / "له" from the account holder's side: a customer's debt is عليه, a supplier's invoice is له.
+    let bal = 0, on = 0, forH = 0;
+    const rows = list.map(e => { const d = e.kind === 'DEBT', onHim = (side === 'CUSTOMER') === d; bal += d ? e.amount : -e.amount; if (onHim) on += e.amount; else forH += e.amount;
+      return `<tr><td>${fShort(e.date)}</td><td>${esc(e.note || entryLabel(e))}${d && e.due ? ` <span style="color:#5A6573">(يستحق ${fShort(e.due)})</span>` : ''}</td><td>${onHim ? money(e.amount) : ''}</td><td>${onHim ? '' : money(e.amount)}</td><td><b>${money(bal)}</b></td></tr>`; }).join('');
+    html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 6px">الحركات بال${esc(cur[c].name)}</div><table><thead><tr><th>التاريخ</th><th>البيان</th><th>عليه</th><th>له</th><th>${side === 'CUSTOMER' ? 'الرصيد عليه' : 'الرصيد له'}</th></tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td></td><td>الإجمالي</td><td>${money(on)}</td><td>${money(forH)}</td><td style="color:#B42318">${money(bal)}</td></tr></tfoot></table>`;
     if (side === 'CUSTOMER' && st.open[c].length) html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 2px">أعمار الديون المستحقة (${esc(cur[c].name)})</div>${agingPaper(aging(st.open[c]))}`;
   });
   if (!mine.length) html += '<div style="color:#5A6573">لا توجد حركات مسجلة.</div>';
