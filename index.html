@@ -138,6 +138,10 @@ form:has(input[name=type][value=SUPPLIER]:checked) .cust-only{display:none}
 form:has(input[name=type][value=CUSTOMER]:checked) .sup-only{display:none}
 form:not(:has(input[name=type][value=BOTH]:checked)) .both-only{display:none}
 form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
+form:not(:has(#en-inv:checked)) .inv-only{display:none}
+form:has(#en-inv:checked) .amt-only{display:none}
+.invrow{background:var(--bg,#F4F5F7);border-radius:14px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px}
+.invrow .grid2{grid-column:1/-1}
 
 /* Tabs */
 .tabs{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
@@ -211,7 +215,7 @@ form:has(input[name=kind][value=PAYMENT]:checked) .debt-only{display:none}
 const KEY = 'raseed.v1', LOGO_KEY = 'raseed.logo';
 const DEV_PHONE = '967781211350', DEV_PHONE_TXT = '+967 781 211 350';
 const DEV_BIO = 'باحث في علوم الإدارة، ومحاسب مالي متمكّن، وخبير في تقنيات الحاسب الآلي وتطوير الأنظمة، إلى جانب خبرته في التصميم الجرافيكي والتسويق الرقمي وتطوير الأعمال. يجمع بين الدقة المالية والرؤية الإدارية والحس الإبداعي، ليقدّم حلولاً رقمية تخدم أصحاب الأعمال وتنمّي مشاريعهم.';
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const DEF_CUR = [{name:'ريال يمني',symbol:'ر.ي'},{name:'ريال سعودي',symbol:'ر.س'},{name:'دولار',symbol:'$'}];
 const T_REM = 'السلام عليكم {الاسم}،\nنذكّركم بأن رصيدكم المستحق لدى {المتجر}:\n{الأرصدة}\n{المتأخر}نرجو التكرم بالسداد، شاكرين حسن تعاملكم.\nللتواصل: {هاتف_المتجر}';
 const T_ST = 'السلام عليكم {الاسم}،\nمرفق كشف حسابكم لدى {المتجر} حتى تاريخ {التاريخ}:\n{الأرصدة}\nللاستفسار: {هاتف_المتجر}';
@@ -266,6 +270,18 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString
 const fmtN = new Intl.NumberFormat('en-US', { maximumFractionDigits:2 });
 const money = c => fmtN.format(c / 100);
 const moneyC = (c, i) => `${money(c)} ${D.settings.currencies[i].symbol}`;
+// Which way a balance goes: a customer's positive balance is owed by him (عليكم); a negative one
+// (he paid more than he owed) is his credit (لكم). For a supplier it is the other way round.
+const onHolder = (v, side) => (v > 0) === (side === 'CUSTOMER');
+const SETTLED = 'صفر، حسابكم مسدَّد بالكامل';
+const balWord = (v, side) => onHolder(v, side) ? 'عليكم' : 'لكم';
+const balPhrase = (v, c, side) => `${moneyC(Math.abs(v), c)} ${balWord(v, side)}`;
+const balInline = (bal, side) => [0,1,2].filter(c => bal[c] !== 0).map(c => balPhrase(bal[c], c, side)).join(' و') || SETTLED;
+const balLines = (bal, side) => [0,1,2].filter(c => bal[c] !== 0).map(c => '• ' + balPhrase(bal[c], c, side)).join('\n') || '• ' + SETTLED;
+const balCell = (v, side) => v === 0 ? '0' : `${money(Math.abs(v))} ${onHolder(v, side) ? 'عليه' : 'له'}`;
+const qtyText = q => String(Math.round(q * 1000) / 1000);
+const itemTotal = it => Math.round(it.q * it.p);
+const nextInvNo = () => Math.max(D.settings.nextInv || 1, D.entries.reduce((m, e) => Math.max(m, e.inv || 0), 0) + 1);
 function parseMoney(s) {
   if (s == null) return null;
   let t = String(s).trim().replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 1776))
@@ -369,14 +385,14 @@ function normPhone(p) {
 const entryLabel = e => e.side === 'CUSTOMER' ? (e.kind === 'DEBT' ? 'دين' : 'سداد') : (e.kind === 'DEBT' ? 'توريد آجل' : 'سداد للمورد');
 function buildMessage(type, s, side, entry) {
   const st = side === 'CUSTOMER' ? s.cs : s.ss, cur = D.settings.currencies;
-  const bal = [0,1,2].filter(c => st.bal[c] !== 0).map(c => '• ' + moneyC(st.bal[c], c)).join('\n') || '• لا يوجد رصيد مستحق';
+  const bal = balLines(st.bal, side);
   const od = [0,1,2].map(c => { const v = overdueAmt(st.open[c]); return v > 0 ? moneyC(v, c) : null; }).filter(Boolean);
   const odLine = od.length ? `منها مبالغ متأخرة: ${od.join(' و')}.\n` : '';
   const tpl = type === 'REMINDER' ? D.settings.tReminder : type === 'STATEMENT' ? D.settings.tStatement : D.settings.tMovement;
-  const mv = entry ? (entry.side === 'CUSTOMER' ? (entry.kind === 'DEBT' ? 'دين جديد' : 'سداد منكم') : (entry.kind === 'DEBT' ? 'توريد آجل' : 'دفعة لكم')) : '';
+  const mv = entry ? (entry.inv ? `دين عليكم بفاتورة مبيعات رقم ${entry.inv}` : entry.side === 'CUSTOMER' ? (entry.kind === 'DEBT' ? 'دين جديد' : 'سداد منكم') : (entry.kind === 'DEBT' ? 'توريد آجل' : 'دفعة لكم')) : '';
   return tpl.replaceAll('{الاسم}', s.a.name).replaceAll('{المتجر}', D.store.name || 'متجرنا').replaceAll('{هاتف_المتجر}', D.store.phone || '')
     .replaceAll('{الأرصدة}', bal).replaceAll('{المتأخر}', odLine).replaceAll('{التاريخ}', fFull(entry ? entry.date : todayISO()))
-    .replaceAll('{الحركة}', mv).replaceAll('{المبلغ}', entry ? moneyC(entry.amount, entry.currency) : '').trim();
+    .replaceAll('{الحركة}', mv).replaceAll('{المبلغ}', entry ? moneyC(entry.amount, entry.currency) : '').replaceAll('{رقم_الفاتورة}', entry && entry.inv ? String(entry.inv) : '').trim();
 }
 const waLink = (phone, text) => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 // iPhone uses "&body=", Android "?body="; the Messages app opens with the text ready.
@@ -556,7 +572,7 @@ function vAccount() {
   return top(a.name, a.phone || TYPE_LABEL[a.type], `<button class="iconbtn" data-act="editAccount" data-id="${a.id}" aria-label="تعديل الحساب">${ic('edit')}</button>`) + `<div class="stack">
     ${a.type === 'BOTH' ? `<div class="segs">${['CUSTOMER','SUPPLIER'].map(sd => `<button class="segbtn ${side === sd ? 'on' : ''}" data-act="side" data-s="${sd}">${sd === 'CUSTOMER' ? 'بصفته عميلاً' : 'بصفته مورداً'}</button>`).join('')}</div>` : ''}
     <section class="hero ${side === 'SUPPLIER' ? 'supplier' : ''}"><span class="lbl">${side === 'CUSTOMER' ? 'الرصيد المستحق عليه' : 'الرصيد المستحق له (عليك)'}</span>
-      <div class="grid3">${[0,1,2].map(c => `<div><b class="num" style="font-size:18px;display:block;color:${st.bal[c] ? '#fff' : '#8FA6C2'}">${money(st.bal[c])}</b><span class="tiny" style="color:var(--on-hero-muted)">${esc(cur[c].name)}</span></div>`).join('')}</div>${limHtml}${netHtml}</section>
+      <div class="grid3">${[0,1,2].map(c => `<div><b class="num" style="font-size:18px;display:block;color:${st.bal[c] < 0 ? '#9FE0B9' : st.bal[c] ? '#fff' : '#8FA6C2'}">${money(Math.abs(st.bal[c]))}</b><span class="tiny" style="color:var(--on-hero-muted)">${esc(cur[c].name)}${st.bal[c] < 0 ? (side === 'CUSTOMER' ? ' · رصيد له' : ' · رصيد لك عليه') : ''}</span></div>`).join('')}</div>${limHtml}${netHtml}</section>
     <div class="grid4">${side === 'CUSTOMER' ? tile('دين', 'plus', 'var(--red)', 'addEntry', 'data-side="CUSTOMER" data-kind="DEBT"') + tile('سداد', 'minus', 'var(--green)', 'addEntry', 'data-side="CUSTOMER" data-kind="PAYMENT"')
       : tile('توريد آجل', 'plus', 'var(--amber)', 'addEntry', 'data-side="SUPPLIER" data-kind="DEBT"') + tile('سداد له', 'minus', 'var(--green)', 'addEntry', 'data-side="SUPPLIER" data-kind="PAYMENT"')}
       ${tile('كشف', 'doc', 'var(--navy-ink)', 'statement', `data-side="${side}"`)}${tile('واتساب', 'chat', 'var(--wa-ink)', 'wa', `data-id="${a.id}" data-side="${side}" data-type="${side === 'CUSTOMER' && st.has ? 'REMINDER' : 'STATEMENT'}"`, 'background:var(--wa-soft);border-color:var(--wa-soft)')}</div>
@@ -604,7 +620,12 @@ function vEntry() {
     ${!D.accounts.length ? `<div class="warn">${ic('warn')}<span>لا توجد حسابات بعد. <button type="button" class="link" data-act="newAccount">أضف حساباً</button></span></div>` : ''}
     ${a && a.type === 'BOTH' ? radios('side', [['CUSTOMER', 'بصفته عميلاً'], ['SUPPLIER', 'بصفته مورداً']], side) : `<input type="hidden" name="side" value="${side}">`}
     ${radios('kind', side === 'CUSTOMER' ? [['DEBT', 'دين عليه'], ['PAYMENT', 'سداد منه']] : [['DEBT', 'توريد آجل (عليّ له)'], ['PAYMENT', 'سداد له']], kind, side === 'CUSTOMER' && kind === 'DEBT' ? 'red' : '')}
-    <div class="card stack"><label class="field">المبلغ<input id="en-amt" name="amount" class="amount num" inputmode="decimal" required value="${ex ? plain(ex.amount) : ''}" data-live="limit" autocomplete="off"></label>
+    ${side === 'CUSTOMER' ? `<label class="row card debt-only" style="cursor:pointer;padding:12px 14px"><input type="checkbox" id="en-inv" name="inv" ${ex && ex.inv ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--navy)"><span class="grow"><b>فاتورة مبيعات بالأصناف</b><span class="small muted" style="display:block">${ex && ex.inv ? 'فاتورة رقم ' + ex.inv : 'تُرقَّم تلقائياً · الرقم التالي ' + nextInvNo()}</span></span></label>
+    <div class="card stack inv-only debt-only"><div class="small muted">الأصناف</div><div id="inv-rows" class="stack">${((ex && ex.items && ex.items.length) ? ex.items : [{ n: '', q: 1, p: '' }]).map(invRowHtml).join('')}</div>
+      <button type="button" class="link" data-act="invAdd">+ إضافة صنف</button>
+      <label class="field">خصم (اختياري)<input name="disc" inputmode="decimal" value="${ex && ex.disc ? plain(ex.disc) : ''}"></label>
+      <div class="between"><span>إجمالي الفاتورة</span><b class="num" id="inv-total" style="font-size:22px">0</b></div></div>` : ''}
+    <div class="card stack"><label class="field amt-only">المبلغ<input id="en-amt" name="amount" class="amount num" inputmode="decimal" value="${ex ? plain(ex.amount) : ''}" data-live="limit" autocomplete="off"></label>
       ${radios('currency', cur.map((c, i) => [String(i), `${esc(c.symbol)} ${esc(c.name)}`]), String(ex ? ex.currency : ui.cur))}</div>
     <div class="warn" id="lim-warn" hidden>${ic('warn')}<span></span></div>
     <div class="grid2"><label class="field">التاريخ<input id="en-date" type="date" name="date" required value="${date}" data-live="dueFromDate"></label>
@@ -612,7 +633,25 @@ function vEntry() {
     <div class="debt-only"><div class="small muted" style="margin-bottom:6px">مدة السداد</div><div class="chips" style="flex-wrap:wrap">${[0, 15, 30, 60].map(d => `<button type="button" class="chip" data-act="dueQuick" data-d="${d}">${d ? d + ' يوماً' : 'بدون موعد'}</button>`).join('')}</div></div>
     <label class="field">البيان<input id="en-note" name="note" value="${esc(ex?.note || '')}" placeholder="مثال: فاتورة رقم 1042"></label>
     ${a && side === 'CUSTOMER' && normPhone(a.phone) ? `<label class="row" style="cursor:pointer"><input type="checkbox" name="notify" id="en-notify" style="width:20px;height:20px;accent-color:var(--wa)"> إرسال إشعار بالحركة للعميل عبر واتساب</label>` : ''}
-    <div class="sticky-foot"><div><button class="btn">حفظ الحركة</button></div></div></form>`;
+    ${ex && ex.inv ? `<button type="button" class="btn out" data-act="invoicePdf" data-id="${ex.id}">${ic('doc')} الفاتورة رقم ${ex.inv} PDF</button>` : ''}
+    <div class="sticky-foot"><div><button class="btn">حفظ</button></div></div></form>`;
+}
+const invRowHtml = it => `<div class="invrow"><label class="field">اسم الصنف<input name="iName" value="${esc(it.n || '')}"></label><button type="button" class="iconbtn" data-act="invDel" aria-label="حذف الصنف" style="align-self:end">✕</button>
+  <div class="grid2"><label class="field">الكمية<input name="iQty" inputmode="decimal" value="${it.q !== undefined && it.q !== '' ? qtyText(it.q) : ''}"></label><label class="field">سعر الوحدة<input name="iPrice" inputmode="decimal" value="${it.p !== '' && it.p !== undefined ? plain(it.p) : ''}"></label></div></div>`;
+// Reads the invoice lines from the entry form; rows left empty are ignored.
+function readInvoice(fd) {
+  const n = fd.getAll('iName'), q = fd.getAll('iQty'), p = fd.getAll('iPrice'); const items = []; let bad = 0;
+  n.forEach((name, i) => { name = String(name).trim(); const pr = String(p[i] || '').trim(); if (!name && !pr) return;
+    const qq = (parseMoney(q[i]) || 0) / 100, pp = parseMoney(pr); if (!name || !(qq > 0) || pp === null || pp === undefined || isNaN(pp)) { bad++; return; } items.push({ n: name, q: qq, p: pp }); });
+  const sub = items.reduce((t, it) => t + itemTotal(it), 0), disc = Math.min(parseMoney(fd.get('disc')) || 0, sub);
+  return { items, bad, sub, disc, total: sub - disc };
+}
+function updateInvoice() {
+  const f = document.getElementById('f-entry'), cb = document.getElementById('en-inv'); if (!f || !cb) return;
+  if (!cb.checked) return;
+  const r = readInvoice(new FormData(f)), c = +(new FormData(f).get('currency') || 0);
+  const t = document.getElementById('inv-total'); if (t) { t.textContent = moneyC(r.total, c); t.style.color = r.bad ? 'var(--red)' : ''; }
+  const amt = document.getElementById('en-amt'); if (amt) amt.value = r.total ? plain(r.total) : '';
 }
 
 function vWa() {
@@ -628,17 +667,17 @@ function vWa() {
     <label class="field">نص الرسالة (يمكنك تعديله)<textarea id="wa-text" rows="9" data-live="waText" style="background:var(--wa-soft);border-color:var(--wa-soft)">${esc(text)}</textarea></label>
     ${phone ? `<a class="btn wa" id="wa-go" href="${waLink(phone, text)}" target="_blank" rel="noopener" data-act="waSent">${ic('chat')} فتح واتساب والإرسال</a>
     <a class="btn out" id="sms-go" href="${smsLink(phone, text)}" data-act="waSent">${ic('sms')} إرسال رسالة نصية SMS</a>` : ''}
-    <button class="btn out" data-act="statement" data-side="${side}" data-withtext="1">${ic('doc')} إرفاق كشف حساب PDF</button>
+    ${entry && entry.inv && type === 'MOVEMENT' ? `<button class="btn out" data-act="invoicePdf" data-id="${entry.id}">${ic('doc')} إرفاق الفاتورة رقم ${entry.inv} PDF</button>` : `<button class="btn out" data-act="statement" data-side="${side}" data-withtext="1">${ic('doc')} إرفاق كشف حساب PDF</button>`}
     <div class="small muted">يفتح واتساب أو تطبيق الرسائل على رقم العميل والرسالة جاهزة، وما عليك إلا الضغط على إرسال (المتصفح لا يسمح بالإرسال التلقائي). ولإرسال الكشف: أنشئه ثم اختر واتساب من قائمة المشاركة.</div></div>`;
 }
 
 // ================= statement / report (paper) =================
-function paperHeader(title) {
+function paperHeader(title, sub) {
   const s = D.store;
   return `<div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #1F3A5F">
     ${LOGO ? `<img src="${LOGO}" style="max-width:110px;max-height:64px;object-fit:contain">` : ''}
     <div style="flex:1"><div style="font-family:var(--f-display);font-size:22px;font-weight:600;color:#1F3A5F">${esc(s.name || 'متجري')}</div><div style="font-size:12px;color:#5A6573">${esc([s.address, s.phone ? 'هاتف: ' + s.phone : ''].filter(Boolean).join(' · '))}</div></div>
-    <div style="text-align:left"><div style="font-family:var(--f-display);font-size:19px;font-weight:600">${title}</div><div style="font-size:12px;color:#5A6573">بتاريخ ${fFull(todayISO())}</div></div></div>`;
+    <div style="text-align:left"><div style="font-family:var(--f-display);font-size:19px;font-weight:600">${title}</div><div style="font-size:12px;color:#5A6573">${sub || 'بتاريخ ' + fFull(todayISO())}</div></div></div>`;
 }
 const paperFoot = () => `<div style="margin-top:28px;padding-top:10px;border-top:1px solid #E1E5EB;font-size:11.5px;color:#5A6573">${D.store.phone ? 'للاستفسار والسداد: ' + esc(D.store.phone) : esc(D.store.name)}</div>`;
 function agingPaper(b) {
@@ -649,20 +688,36 @@ function statementPaper(a, side) {
   const mine = D.entries.filter(e => e.accountId === a.id && e.side === side);
   let html = `<div class="paper">${paperHeader(side === 'CUSTOMER' ? 'كشف حساب عميل' : 'كشف حساب مورد')}
     <div style="display:flex;justify-content:space-between;margin:16px 0"><div><div style="font-size:11px;color:#5A6573">${side === 'CUSTOMER' ? 'العميل' : 'المورد'}</div><div style="font-size:17px;font-weight:600">${esc(a.name)}</div></div><div class="ltr" style="color:#5A6573;font-size:13px">${esc(a.phone || '')}</div></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">${[0,1,2].map(c => `<div style="background:#F4F5F7;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#5A6573">${side === 'CUSTOMER' ? 'الرصيد عليه' : 'الرصيد له'} بال${esc(cur[c].name)}</div><div style="font-size:18px;font-weight:700;color:${st.bal[c] > 0 ? '#B42318' : '#18212B'}">${money(st.bal[c])}</div></div>`).join('')}</div>`;
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">${[0,1,2].map(c => `<div style="background:#F4F5F7;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#5A6573">${st.bal[c] === 0 ? 'الرصيد' : onHolder(st.bal[c], side) ? 'الرصيد عليه' : 'الرصيد له'} بال${esc(cur[c].name)}</div><div style="font-size:18px;font-weight:700;color:${st.bal[c] === 0 ? '#18212B' : onHolder(st.bal[c], side) ? '#B42318' : '#1F7A4D'}">${money(Math.abs(st.bal[c]))}</div></div>`).join('')}</div>`;
   [0,1,2].forEach(c => {
     const list = mine.filter(e => e.currency === c).sort((x, y) => x.date.localeCompare(y.date) || x.createdAt - y.createdAt);
     if (!list.length) return;
     // "عليه" / "له" from the account holder's side: a customer's debt is عليه, a supplier's invoice is له.
     let bal = 0, on = 0, forH = 0;
     const rows = list.map(e => { const d = e.kind === 'DEBT', onHim = (side === 'CUSTOMER') === d; bal += d ? e.amount : -e.amount; if (onHim) on += e.amount; else forH += e.amount;
-      return `<tr><td>${fShort(e.date)}</td><td>${esc(e.note || entryLabel(e))}${d && e.due ? ` <span style="color:#5A6573">(يستحق ${fShort(e.due)})</span>` : ''}</td><td>${onHim ? money(e.amount) : ''}</td><td>${onHim ? '' : money(e.amount)}</td><td><b>${money(bal)}</b></td></tr>`; }).join('');
-    html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 6px">الحركات بال${esc(cur[c].name)}</div><table><thead><tr><th>التاريخ</th><th>البيان</th><th>عليه</th><th>له</th><th>${side === 'CUSTOMER' ? 'الرصيد عليه' : 'الرصيد له'}</th></tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr><td></td><td>الإجمالي</td><td>${money(on)}</td><td>${money(forH)}</td><td style="color:#B42318">${money(bal)}</td></tr></tfoot></table>`;
+      return `<tr><td>${fShort(e.date)}</td><td>${esc(e.note || entryLabel(e))}${d && e.due ? ` <span style="color:#5A6573">(يستحق ${fShort(e.due)})</span>` : ''}</td><td>${onHim ? money(e.amount) : ''}</td><td>${onHim ? '' : money(e.amount)}</td><td><b>${balCell(bal, side)}</b></td></tr>`; }).join('');
+    html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 6px">الحركات بال${esc(cur[c].name)}</div><table><thead><tr><th>التاريخ</th><th>البيان</th><th>عليه</th><th>له</th><th>الرصيد</th></tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td></td><td>الإجمالي</td><td>${money(on)}</td><td>${money(forH)}</td><td style="color:#B42318">${balCell(bal, side)}</td></tr></tfoot></table>`;
     if (side === 'CUSTOMER' && st.open[c].length) html += `<div style="font-weight:600;color:#1F3A5F;margin:14px 0 2px">أعمار الديون المستحقة (${esc(cur[c].name)})</div>${agingPaper(aging(st.open[c]))}`;
   });
   if (!mine.length) html += '<div style="color:#5A6573">لا توجد حركات مسجلة.</div>';
   return html + paperFoot() + '</div>';
+}
+function invoicePaper(e) {
+  const a = D.accounts.find(x => x.id === e.accountId) || { name: '', phone: '' }, s = summarize(a, D.entries), cur = D.settings.currencies[e.currency];
+  const items = (e.items && e.items.length) ? e.items : [{ n: e.note || 'مبيعات', q: 1, p: e.amount }];
+  const sub = items.reduce((t, it) => t + itemTotal(it), 0), facts = [['رقم الفاتورة', e.inv], ['التاريخ', fShort(e.date)], ['تاريخ الاستحقاق', e.due ? fShort(e.due) : 'بدون موعد'], ['العملة', cur.name]];
+  const defNote = 'فاتورة مبيعات رقم ' + e.inv;
+  return `<div class="paper">${paperHeader('فاتورة مبيعات', `رقم ${e.inv} · ${fFull(e.date)}`)}
+    <div style="display:flex;justify-content:space-between;margin:16px 0"><div><div style="font-size:11px;color:#5A6573">العميل</div><div style="font-size:17px;font-weight:600">${esc(a.name)}</div></div><div class="ltr" style="color:#5A6573;font-size:13px">${esc(a.phone || '')}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">${facts.map(([k, v]) => `<div style="background:#F4F5F7;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#5A6573">${k}</div><div style="font-size:15px;font-weight:700">${esc(String(v))}</div></div>`).join('')}</div>
+    <table><thead><tr><th>#</th><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>
+    ${items.map((it, i) => `<tr><td>${i + 1}</td><td>${esc(it.n)}</td><td>${qtyText(it.q)}</td><td>${money(it.p)}</td><td><b>${money(itemTotal(it))}</b></td></tr>`).join('')}</tbody>
+    <tfoot>${e.disc ? `<tr><td></td><td>المجموع</td><td></td><td></td><td>${money(sub)}</td></tr><tr><td></td><td>الخصم</td><td></td><td></td><td>- ${money(e.disc)}</td></tr>` : ''}
+    <tr><td></td><td>إجمالي الفاتورة (${esc(cur.symbol)})</td><td></td><td></td><td style="color:#B42318">${money(e.amount)}</td></tr></tfoot></table>
+    <div style="background:#E6EDF5;border-radius:10px;padding:10px 14px;margin-top:16px"><div style="font-size:11px;color:#5A6573">رصيد حسابكم الحالي لدينا</div><div style="font-size:15px;font-weight:700;color:#1F3A5F">${esc(balInline(s.cs.bal, 'CUSTOMER'))}</div></div>
+    ${e.note && e.note !== defNote ? `<div style="margin-top:14px"><div style="font-size:11px;color:#5A6573">ملاحظات</div><div>${esc(e.note)}</div></div>` : ''}
+    <div style="margin-top:14px;color:#5A6573">شكراً لتعاملكم معنا.</div>${paperFoot()}</div>`;
 }
 function reportPaper() {
   const S = summaries(), cur = D.settings.currencies; let html = `<div class="paper">${paperHeader('تقرير الذمم')}`;
@@ -724,7 +779,7 @@ function dlgStore() { const s = D.store; modal(`<form class="stack" data-form="s
 function dlgCur() { const c = D.settings.currencies; modal(`<form class="stack" data-form="cur"><h2>العملات الثلاث</h2>${[0,1,2].map(i => `<div class="row" style="align-items:flex-end"><label class="field grow">${i ? 'العملة ' + (i + 1) : 'العملة الأساسية'}<input id="cu-n${i}" name="n${i}" value="${esc(c[i].name)}"></label><label class="field" style="width:96px">الرمز<input id="cu-s${i}" name="s${i}" value="${esc(c[i].symbol)}"></label></div>`).join('')}<div class="small muted">تغيير الاسم لا يغيّر المبالغ المسجلة.</div>${dlgFoot()}</form>`); }
 function dlgDefaults() { const s = D.settings; modal(`<form class="stack" data-form="defaults"><h2>الإعدادات الافتراضية</h2><label class="field">الحد الائتماني الافتراضي (${esc(s.currencies[0].name)})<input id="df-lim" name="lim" inputmode="decimal" value="${s.defaultLimit > 0 ? plain(s.defaultLimit) : ''}" placeholder="بدون حد"></label><label class="field">مدة السداد الافتراضية (أيام)<input id="df-term" name="term" inputmode="numeric" value="${s.defaultTerm}"></label><label class="field">مفتاح الدولة<input id="df-cc" name="cc" inputmode="numeric" class="ltr" value="${esc(s.cc)}"></label>${dlgFoot()}</form>`); }
 function dlgRemind() { const s = D.settings; modal(`<form class="stack" data-form="remind"><h2>مواعيد التذكير</h2><label class="field">التذكير قبل الاستحقاق بـ (أيام)<input id="rm-b" name="before" inputmode="numeric" value="${s.remindBefore}"></label><label class="row"><input type="checkbox" id="rm-d" name="onDue" ${s.remindOnDue ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--navy)"> التذكير يوم الاستحقاق</label><label class="field">تكرار التذكير للمتأخرين كل (أيام)<input id="rm-r" name="repeat" inputmode="numeric" value="${s.repeat}"></label><div class="small muted">ضع 0 لإيقاف التكرار. تظهر التذكيرات في الرئيسية عند فتح التطبيق.</div>${dlgFoot()}</form>`); }
-function dlgTpl() { const s = D.settings; modal(`<form class="stack" data-form="tpl"><h2>قوالب الرسائل</h2><label class="field">رسالة التذكير<textarea id="tp-r" name="r" rows="6">${esc(s.tReminder)}</textarea></label><label class="field">رسالة كشف الحساب<textarea id="tp-s" name="s" rows="5">${esc(s.tStatement)}</textarea></label><label class="field">رسالة إشعار الحركة<textarea id="tp-m" name="m" rows="5">${esc(s.tMovement)}</textarea></label><div class="small muted">متغيرات: {الاسم} {المتجر} {هاتف_المتجر} {الأرصدة} {المتأخر} {التاريخ} {الحركة} {المبلغ}</div><button type="button" class="link" data-act="tplReset">استعادة النصوص الافتراضية</button>${dlgFoot()}</form>`); }
+function dlgTpl() { const s = D.settings; modal(`<form class="stack" data-form="tpl"><h2>قوالب الرسائل</h2><label class="field">رسالة التذكير<textarea id="tp-r" name="r" rows="6">${esc(s.tReminder)}</textarea></label><label class="field">رسالة كشف الحساب<textarea id="tp-s" name="s" rows="5">${esc(s.tStatement)}</textarea></label><label class="field">رسالة إشعار الحركة<textarea id="tp-m" name="m" rows="5">${esc(s.tMovement)}</textarea></label><div class="small muted">متغيرات: {الاسم} {المتجر} {هاتف_المتجر} {الأرصدة} {المتأخر} {التاريخ} {الحركة} {المبلغ} {رقم_الفاتورة}</div><button type="button" class="link" data-act="tplReset">استعادة النصوص الافتراضية</button>${dlgFoot()}</form>`); }
 
 
 // ================= licensing (Firebase) =================
@@ -1013,13 +1068,17 @@ function render() {
   }
   if (ui.screen !== 'splash' && ui.screen !== 'onboard' && D.store.name && Lic.state().locked) { app.innerHTML = vLock(); return; }
   app.innerHTML = v();
-  if (ui.screen === 'entry') updateLimitWarn();
+  if (ui.screen === 'entry') { updateInvoice(); updateLimitWarn(); }
 }
 function updateLimitWarn() {
   const f = document.getElementById('f-entry'), w = document.getElementById('lim-warn'); if (!f || !w) return;
   const fd = new FormData(f), a = D.accounts.find(x => x.id === (fd.get('accountId') || ui.p.accountId || (ui.p.entryId && D.entries.find(e => e.id === ui.p.entryId)?.accountId)));
   const amt = parseMoney(fd.get('amount')), c = +(fd.get('currency') || 0), side = fd.get('side'), kind = fd.get('kind');
   let msg = null;
+  if (a && kind === 'PAYMENT' && amt) { const others = D.entries.filter(e => e.accountId === a.id && e.id !== ui.p.entryId), owed = sideState(others, a.id, side || 'CUSTOMER').bal[c];
+    if (amt > owed) { const extra = moneyC(amt - Math.max(owed, 0), c);
+      msg = side === 'SUPPLIER' ? (owed <= 0 ? `لا يوجد مستحق له بهذه العملة، وسيُسجَّل المبلغ كاملاً (${extra}) رصيداً لك عليه.` : `المبلغ أكبر من المستحق له بـ ${extra}، وسيُسجَّل الفرق رصيداً لك عليه.`)
+        : (owed <= 0 ? `لا يوجد مستحق عليه بهذه العملة، وسيُسجَّل المبلغ كاملاً (${extra}) رصيداً له لديك.` : `المبلغ أكبر من المستحق عليه بـ ${extra}، وسيُسجَّل الفرق رصيداً له، ويظهر في رسالته «لكم».`); } }
   if (a && side === 'CUSTOMER' && kind === 'DEBT' && amt) { const lim = (a.limits || {})[c] || 0;
     if (lim > 0) { const others = D.entries.filter(e => e.accountId === a.id && e.id !== ui.p.entryId); const after = sideState(others, a.id, 'CUSTOMER').bal[c] + amt; if (after > lim) msg = `سيتجاوز الحد الائتماني بـ ${moneyC(after - lim, c)}`; } }
   w.hidden = !msg; if (msg) w.querySelector('span').textContent = msg;
@@ -1063,10 +1122,16 @@ const A = {
     const e = D.entries.find(x => x.id === d.id); if (!e) return; const a = D.accounts.find(x => x.id === e.accountId);
     modal(`<h2 class="num">${moneyC(e.amount, e.currency)}</h2><div class="muted">${esc(e.note || entryLabel(e))}<br>${fFull(e.date)}${e.due && e.kind === 'DEBT' ? '<br>يستحق: ' + fFull(e.due) : ''}</div>
       <button class="btn" data-act="editEntry" data-id="${e.id}">تعديل</button>
-      ${a && e.side === 'CUSTOMER' && normPhone(a.phone) ? `<button class="btn wa" data-act="notifyEntry" data-id="${e.id}">إشعار العميل بالحركة</button>` : ''}
+      ${e.inv ? `<button class="btn out" data-act="invoicePdf" data-id="${e.id}">${ic('doc')} الفاتورة رقم ${e.inv} PDF</button>` : ''}
+      ${a && e.side === 'CUSTOMER' && normPhone(a.phone) ? `<button class="btn wa" data-act="notifyEntry" data-id="${e.id}">${e.inv ? 'إرسال الفاتورة للعميل' : 'إشعار العميل بالحركة'}</button>` : ''}
       <button class="btn danger" data-act="askDelEntry" data-id="${e.id}">حذف</button>`);
   },
   editEntry: d => { modal(''); go('entry', { entryId: d.id }); },
+  invAdd: () => { const box = document.getElementById('inv-rows'); if (box) { box.insertAdjacentHTML('beforeend', invRowHtml({ n: '', q: 1, p: '' })); box.lastElementChild.querySelector('input').focus(); } },
+  invDel: (d, el) => { const box = document.getElementById('inv-rows'); if (box && box.children.length > 1) { el.closest('.invrow').remove(); updateInvoice(); } },
+  invoicePdf: d => { modal(''); const e = D.entries.find(x => x.id === d.id); if (!e || !e.inv) return; const a = D.accounts.find(x => x.id === e.accountId);
+    const text = document.getElementById('wa-text')?.value || (a ? buildMessage('MOVEMENT', summarize(a, D.entries), 'CUSTOMER', e) : '');
+    showPaper('فاتورة رقم ' + e.inv, invoicePaper(e), 'فاتورة ' + e.inv + ' - ' + (a ? a.name : ''), text); },
   notifyEntry: d => { modal(''); const e = D.entries.find(x => x.id === d.id); go('wa', { id: e.accountId, side: 'CUSTOMER', type: 'MOVEMENT', entryId: e.id }); },
   askDelEntry: d => modal(`<h2>حذف الحركة؟</h2><div class="muted">لا يمكن التراجع عن الحذف.</div><div class="grid2"><button class="btn out" data-act="closeModal">إلغاء</button><button class="btn" style="background:var(--red)" data-act="delEntry" data-id="${d.id}">حذف</button></div>`),
   delEntry: d => { D.entries = D.entries.filter(e => e.id !== d.id); save(); modal(''); render(); toast('حُذفت الحركة'); },
@@ -1125,12 +1190,20 @@ const F = {
     const ex = ui.p.entryId ? D.entries.find(e => e.id === ui.p.entryId) : null;
     const accountId = ex ? ex.accountId : fd.get('accountId'); const a = D.accounts.find(x => x.id === accountId);
     if (!a) return toast('اختر الحساب');
-    const amount = parseMoney(fd.get('amount')); if (!amount) return toast('اكتب مبلغاً صحيحاً');
     const side = a.type === 'CUSTOMER' ? 'CUSTOMER' : a.type === 'SUPPLIER' ? 'SUPPLIER' : (fd.get('side') || 'CUSTOMER');
     const kind = fd.get('kind') || 'DEBT', date = fd.get('date') || todayISO();
-    const data = { accountId, side, kind, amount, currency: +(fd.get('currency') || 0), date, due: kind === 'DEBT' ? (fd.get('due') || null) : null, note: String(fd.get('note') || '').trim() };
+    const isInv = !!fd.get('inv') && side === 'CUSTOMER' && kind === 'DEBT';
+    const inv = isInv ? readInvoice(fd) : null;
+    if (inv && inv.bad) return toast('أكمل اسم كل صنف وكميته وسعره');
+    if (inv && !inv.items.length) return toast('أضف صنفاً واحداً على الأقل');
+    const amount = inv ? inv.total : parseMoney(fd.get('amount')); if (!amount) return toast('اكتب مبلغاً صحيحاً');
+    const data = { accountId, side, kind, amount, currency: +(fd.get('currency') || 0), date, due: kind === 'DEBT' ? (fd.get('due') || null) : null, note: String(fd.get('note') || '').trim(),
+      inv: inv ? ((ex && ex.inv) || null) : null, items: inv ? inv.items : [], disc: inv ? inv.disc : 0 };
+    // A new invoice takes the next number now; numbers are never reused.
+    if (inv && !data.inv) { data.inv = nextInvNo(); D.settings.nextInv = data.inv + 1; if (!data.note) data.note = 'فاتورة مبيعات رقم ' + data.inv; }
+    if (!inv) { delete data.inv; delete data.items; delete data.disc; }
     let id;
-    if (ex) { Object.assign(ex, data); id = ex.id; } else { id = uid(); D.entries.push({ id, createdAt: Date.now(), ...data }); }
+    if (ex) { if (!inv) { delete ex.inv; delete ex.items; delete ex.disc; } Object.assign(ex, data); id = ex.id; } else { id = uid(); D.entries.push({ id, createdAt: Date.now(), ...data }); }
     save(); const notify = fd.get('notify'); back(); toast('حُفظت الحركة');
     if (notify && side === 'CUSTOMER') go('wa', { id: accountId, side: 'CUSTOMER', type: 'MOVEMENT', entryId: id });
   },
@@ -1161,7 +1234,7 @@ document.addEventListener('input', ev => {
   const el = ev.target, live = el.dataset.live;
   if (live === 'search') { ui.q = el.value; const pos = el.selectionStart; render(); const n = document.getElementById('acc-q'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }
   else if (live === 'waText') { const go_ = document.getElementById('wa-go'); const a = D.accounts.find(x => x.id === ui.p.id); if (go_ && a) go_.href = waLink(normPhone(a.phone), el.value); const sm = document.getElementById('sms-go'); if (sm && a) sm.href = smsLink(normPhone(a.phone), el.value); }
-  else if (ui.screen === 'entry') updateLimitWarn();
+  else if (ui.screen === 'entry') { updateInvoice(); updateLimitWarn(); }
 });
 document.addEventListener('change', ev => {
   const el = ev.target, live = el.dataset.live;
@@ -1183,7 +1256,7 @@ document.addEventListener('change', ev => {
       if (el.name === 'side') { ui.p = { ...ui.p, side: el.value, kind: fd.get('kind'), _keep: Object.fromEntries(fd) }; render(); restoreForm(); return; }
       const segs = el.closest('.segs'); segs.classList.toggle('red', fd.get('side') === 'CUSTOMER' && el.value === 'DEBT');
     }
-    updateLimitWarn();
+    updateInvoice(); updateLimitWarn();
   }
 });
 function restoreForm() {
